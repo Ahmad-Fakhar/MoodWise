@@ -1,72 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Login - MoodWise Notes</title>
-    <link rel="stylesheet" href="style.css">
-    <style>
-        .auth-container {
-            max-width: 400px;
-            margin: 50px auto;
-            padding: 20px;
-            background-color: #fff;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        .auth-header {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        .auth-form .form-group {
-            margin-bottom: 15px;
-        }
-
-        .auth-form label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-
-        .auth-form input {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-
-        .auth-form .form-actions {
-            margin-top: 20px;
-        }
-
-        .auth-form .form-actions button {
-            width: 100%;
-            padding: 10px;
-        }
-
-        .auth-footer {
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .message {
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 15px;
-            text-align: center;
-        }
-
-        .message.error {
-            background-color: #f9f2f2;
-            color: #d9534f;
-        }
-
-        .hidden {
-            display: none;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
     <div class="container">
@@ -79,12 +17,24 @@
             <form id="login-form" class="auth-form">
                 <div class="form-group">
                     <label for="username">Username</label>
-                    <input type="text" id="username" name="username" required>
+                    <input
+                        type="text"
+                        id="username"
+                        name="username"
+                        required
+                        autocomplete="username"
+                    />
                 </div>
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        required
+                        autocomplete="current-password"
+                    />
                 </div>
 
                 <div class="form-actions">
@@ -102,26 +52,26 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             const loginForm = document.getElementById('login-form');
             const messageDiv = document.getElementById('message');
 
-            loginForm.addEventListener('submit', async function(e) {
+            loginForm.addEventListener('submit', async function (e) {
                 e.preventDefault();
 
-                const username = document.getElementById('username').value;
+                const username = document.getElementById('username').value.trim();
                 const password = document.getElementById('password').value;
 
                 try {
                     const response = await fetch('/api/token', {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
+                            'Content-Type': 'application/x-www-form-urlencoded',
                         },
                         body: new URLSearchParams({
-                            'username': username,
-                            'password': password
-                        })
+                            username: username,
+                            password: password,
+                        }),
                     });
 
                     const data = await response.json();
