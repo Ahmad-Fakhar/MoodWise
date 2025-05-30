@@ -1,28 +1,27 @@
 import os
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy.orm import Session
+from bson import ObjectId
 
-from .database import get_db
-from .models import User, PasswordReset
+from .database import get_database
 
 # Secret key and algorithm for JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 class Token(BaseModel):
@@ -31,13 +30,12 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    username: Optional[str] = None
+    email: Optional[str] = None
 
 
 class UserInDB(BaseModel):
-    id: int
-    username: str
     email: str
+    username: str
     hashed_password: str
 
 
@@ -49,19 +47,15 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 
-def get_user(db: Session, username: str):
-    return db.query(User).filter(User.username == username).first()
+async def get_user_by_email(db, email: str):
+    return await db.users.find_one({"email": email})
 
 
-def get_user_by_email(db: Session, email: str):
-    return db.query(User).filter(User.email == email).first()
-
-
-def authenticate_user(db: Session, username: str, password: str):
-    user = get_user(db, username)
+async def authenticate_user(db, username: str, password: str):
+    user = await db.users.find_one({"username": username})
     if not user:
         return False
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, user["hashed_password"]):
         return False
     return user
 
@@ -77,7 +71,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_database)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -85,23 +79,45 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
+        token_data = TokenData(email=email)
     except JWTError:
         raise credentials_exception
-    user = get_user(db, username=token_data.username)
+    
+    user = await db.users.find_one({"email": token_data.email})
     if user is None:
         raise credentials_exception
     return user
 
 
-async def get_current_active_user(current_user = Depends(get_current_user)):
+async def get_current_active_user(current_user: Dict[str, Any] = Depends(get_current_user)):
+    if current_user.get("disabled", False):
+        raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
 
-def create_password_reset_token(email: str, db: Session):
+async def create_user(db, user_data):
+    # Hash the password
+    hashed_password = get_password_hash(user_data.password)
+    
+    # Create user document
+    user_doc = {
+        "username": user_data.username,
+        "email": user_data.email,
+        "hashed_password": hashed_password,
+        "disabled": False,
+        "created_at": datetime.utcnow()
+    }
+    
+    # Insert into database
+    result = await db.users.insert_one(user_doc)
+    
+    return result.inserted_id
+
+
+async def create_password_reset_token(email: str, db):
     # Generate a secure token
     token = secrets.token_urlsafe(32)
     
@@ -109,63 +125,64 @@ def create_password_reset_token(email: str, db: Session):
     expires_at = datetime.utcnow() + timedelta(hours=24)
     
     # Get user by email
-    user = get_user_by_email(db, email)
+    user = await db.users.find_one({"email": email})
     if not user:
         # We don't want to reveal if the email exists or not for security reasons
         return None
     
     # Check if there's an existing reset token for this user
-    existing_reset = db.query(PasswordReset).filter(PasswordReset.user_id == user.id).first()
+    existing_reset = await db.password_resets.find_one({"user_id": user["_id"]})
     
     if existing_reset:
         # Update existing reset token
-        existing_reset.token = token
-        existing_reset.expires_at = expires_at
+        await db.password_resets.update_one(
+            {"_id": existing_reset["_id"]},
+            {"$set": {"token": token, "expires_at": expires_at}}
+        )
     else:
         # Create new reset token
-        reset_entry = PasswordReset(
-            user_id=user.id,
-            token=token,
-            expires_at=expires_at
-        )
-        db.add(reset_entry)
+        await db.password_resets.insert_one({
+            "user_id": user["_id"],
+            "token": token,
+            "expires_at": expires_at
+        })
     
-    db.commit()
     return token
 
 
-def verify_password_reset_token(token: str, db: Session):
+async def verify_password_reset_token(token: str, db):
     # Find the reset entry
-    reset_entry = db.query(PasswordReset).filter(PasswordReset.token == token).first()
+    reset_entry = await db.password_resets.find_one({"token": token})
     
     if not reset_entry:
         return None
     
     # Check if token is expired
-    if reset_entry.expires_at < datetime.utcnow():
+    if reset_entry["expires_at"] < datetime.utcnow():
         # Delete expired token
-        db.delete(reset_entry)
-        db.commit()
+        await db.password_resets.delete_one({"_id": reset_entry["_id"]})
         return None
     
     # Get the user
-    user = db.query(User).filter(User.id == reset_entry.user_id).first()
+    user = await db.users.find_one({"_id": reset_entry["user_id"]})
     return user
 
 
-def reset_password(token: str, new_password: str, db: Session):
+async def reset_password(token: str, new_password: str, db):
     # Verify token and get user
-    user = verify_password_reset_token(token, db)
+    user = await verify_password_reset_token(token, db)
     
     if not user:
         return False
     
     # Update user's password
-    user.hashed_password = get_password_hash(new_password)
+    hashed_password = get_password_hash(new_password)
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"hashed_password": hashed_password}}
+    )
     
     # Delete the reset token
-    reset_entry = db.query(PasswordReset).filter(PasswordReset.user_id == user.id).first()
-    db.delete(reset_entry)
+    await db.password_resets.delete_one({"user_id": user["_id"]})
     
-    db.commit()
     return True
