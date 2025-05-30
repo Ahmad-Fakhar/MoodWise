@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emotional Chat - MoodWise Notes</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: auto;
+            text-align: right;
+        }
+        
+        .bot-message {
+            background-color: #f1f1f1;
+        }
+        
+        .message-input {
+            display: flex;
+            margin-top: 10px;
+        }
+        
+        .message-input input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        
+        .emotion-indicator {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+        
+        .typing-indicator {
+            display: none;
+            color: #666;
+            font-style: italic;
+            margin-bottom: 10px;
+        }
+        
+        .emotion-happy { border-left: 4px solid #4CAF50; }
+        .emotion-sad { border-left: 4px solid #2196F3; }
+        .emotion-angry { border-left: 4px solid #F44336; }
+        .emotion-surprised { border-left: 4px solid #FF9800; }
+        .emotion-neutral { border-left: 4px solid #9E9E9E; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="app-header">
+            <h1>MoodWise Notes</h1>
+            <nav>
+                <ul>
+                    <li><a href="dashboard.html">Dashboard</a></li>
+                    <li><a href="chat.html" class="active">Emotional Chat</a></li>
+                    <li><a href="#" id="logout-btn">Logout</a></li>
+                </ul>
+            </nav>
+        </header>
+        
+        <div class="chat-container">
+            <h2>Emotional Chatbot</h2>
+            <p>Chat with our AI assistant that understands your emotions and responds accordingly.</p>
+            
+            <div class="chat-messages" id="chat-messages">
+                <div class="message bot-message emotion-neutral">
+                    Hello! I'm your emotional support chatbot. How are you feeling today?
+                    <div class="emotion-indicator">Emotion: Friendly</div>
+                </div>
+            </div>
+            
+            <div class="typing-indicator" id="typing-indicator">Bot is typing...</div>
+            
+            <div class="message-input">
+                <input type="text" id="message-input" placeholder="Type your message here..." />
+                <button class="btn primary-btn" id="send-btn">Send</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if user is logged in
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            const chatMessages = document.getElementById('chat-messages');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-btn');
+            const typingIndicator = document.getElementById('typing-indicator');
+            const logoutBtn = document.getElementById('logout-btn');
+            
+            // Store conversation history
+            let conversationHistory = [
+                { role: "system", content: "You are an emotionally intelligent assistant. Analyze the user's message for emotional tone and respond appropriately. Include an emotion tag at the end of your response in the format [EMOTION: emotion_name]. Be empathetic and supportive." },
+                { role: "assistant", content: "Hello! I'm your emotional support chatbot. How are you feeling today?" }
+            ];
+            
+            // Function to add a message to the chat
+            function addMessage(content, isUser = false, emotion = 'neutral') {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = isUser ? 'message user-message' : `message bot-message emotion-${emotion.toLowerCase()}`;
+                messageDiv.textContent = content;
+                
+                if (!isUser) {
+                    const emotionDiv = document.createElement('div');
+                    emotionDiv.className = 'emotion-indicator';
+                    emotionDiv.textContent = `Emotion: ${emotion}`;
+                    messageDiv.appendChild(emotionDiv);
+                }
+                
+                chatMessages.appendChild(messageDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // Function to send message to the API
+            async function sendMessage(message) {
+                // Show typing indicator
+                typingIndicator.style.display = 'block';
+                
+                try {
+                    const response = await fetch('/emotional-chat/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            message: message,
+                            conversation_history: conversationHistory
+                        })
+                    });
+                    
+                    // Hide typing indicator
+                    typingIndicator.style.display = 'none';
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        // Add bot message to chat
+                        addMessage(data.message, false, data.emotion);
+                        
+                        // Update conversation history
+                        conversationHistory.push({ role: "user", content: message });
+                        conversationHistory.push({ role: "assistant", content: data.message });
+                        
+                        // Save conversation periodically (optional)
+                        if (conversationHistory.length % 10 === 0) {
+                            saveConversation();
+                        }
+                    } else {
+                        const error = await response.json();
+                        addMessage(`Error: ${error.detail || 'Something went wrong'}`, false, 'neutral');
+                    }
+                } catch (error) {
+                    // Hide typing indicator
+                    typingIndicator.style.display = 'none';
+                    addMessage('Error connecting to the server. Please try again.', false, 'neutral');
+                    console.error('Error:', error);
+                }
+            }
+            
+            // Function to save conversation
+            async function saveConversation() {
+                try {
+                    await fetch('/emotional-chat/save-conversation', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(conversationHistory)
+                    });
+                } catch (error) {
+                    console.error('Error saving conversation:', error);
+                }
+            }
+            
+            // Event listener for send button
+            sendButton.addEventListener('click', function() {
+                const message = messageInput.value.trim();
+                if (message) {
+                    // Add user message to chat
+                    addMessage(message, true);
+                    
+                    // Send message to API
+                    sendMessage(message);
+                    
+                    // Clear input
+                    messageInput.value = '';
+                }
+            });
+            
+            // Event listener for Enter key
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendButton.click();
+                }
+            });
+            
+            // Event listener for logout button
+            logoutBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                localStorage.removeItem('token');
+                window.location.href = 'login.html';
+            });
+        });
+    </script>
+</body>
+</html>
