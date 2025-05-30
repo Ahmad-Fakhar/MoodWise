@@ -5,5 +5,5 @@ venv/
 __pycache__/
 *.pyc
 
-# Ignore environment variables file
+# Ignore   ALl environment variables file
 .env
