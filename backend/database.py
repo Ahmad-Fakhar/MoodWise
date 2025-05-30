@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+MONGODB_URL = os.getenv("MONGODB_URL")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "fastauth_notes")
 
 client: AsyncIOMotorClient = None
@@ -17,9 +17,9 @@ async def connect_to_mongo():
     global client, database
     client = AsyncIOMotorClient(MONGODB_URL)
     database = client[DATABASE_NAME]
-    print(f"Connected to MongoDB at {MONGODB_URL}")
-    
-    # Create indexes for better performance
+    print(f"✅ Connected to MongoDB at {MONGODB_URL}")
+
+    # Create indexes
     await database.users.create_index("email", unique=True)
     await database.users.create_index("username")
     await database.notes.create_index("user_id")
@@ -30,4 +30,4 @@ async def close_mongo_connection():
     global client
     if client:
         client.close()
-        print("Disconnected from MongoDB")
+        print("❌ Disconnected from MongoDB")
