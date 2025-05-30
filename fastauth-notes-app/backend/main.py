@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes.auth_routes import auth_router
-from routes.note_routes import notes_router
-from database import connect_to_mongo, close_mongo_connection
+from .routes.auth_routes import auth_router
+from .routes.note_routes import notes_router
+from .routes.chat_routes import chat_router
+from .database import connect_to_mongo, close_mongo_connection
 
 app = FastAPI(title="FastAuth Notes API", version="1.0.0")
 
@@ -18,6 +19,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
 app.include_router(notes_router, prefix="/notes", tags=["notes"])
+app.include_router(chat_router, prefix="/emotional-chat", tags=["chat"])
 
 @app.on_event("startup")
 async def startup_db_client():
